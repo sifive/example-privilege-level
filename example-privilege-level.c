@@ -115,13 +115,47 @@ static void user_mode_entry_point(void)
 	return;
 }
 
-static inline void machine_mode_test(void)
+static __attribute__((__noinline__)) void exit_point(void)
+{
+	exit(0);
+}
+
+static __attribute__((__noinline__)) void start_transfer_umode(void)
+{
+	printf("=== Transfer privilege to user mode ===\n");
+
+	u_regfile.ra = (metal_xreg_t)exit_point;
+
+	/* Use our own function to switch mode */
+	switch_mode(METAL_PRIVILEGE_USER,
+		    u_regfile,
+		    user_mode_entry_point);
+}
+
+static __attribute__((__noinline__)) void start_transfer_smode(void)
+{
+	printf("=== Transfer privilege to supervisor mode ===\n");
+
+	s_regfile.ra = (metal_xreg_t)start_transfer_umode;
+
+	/* Use API of freedom-metal to switch mode */
+	metal_privilege_drop_to_mode(METAL_PRIVILEGE_SUPERVISOR,
+				     s_regfile,
+				     supervisor_mode_entry_point);
+}
+
+static void start_transfer_privilege(void)
 {
 	uintptr_t value;
+
+	/* We are in machine mode at the beginning */
+	printf("=== Start privilege in machine mode ===\n");
 
 	METAL_CPU_GET_CSR(mstatus, value);
 	value = EXTRACT_FIELD(value, METAL_MSTATUS_MPP);
 	printf("mstatus.MPP is 0x%x\n", (unsigned int)value);
+
+	start_transfer_smode();
 }
 
 int main(void)
@@ -187,28 +221,8 @@ int main(void)
 		return 6;
 	}
 #endif
-	/* We are in machine mode at the beginning */
-	printf("=== In machine mode at the beginning ===\n");
-	machine_mode_test();
 
-	/* Transfer to supervisor mode */
-	printf("=== Transfer privilege to supervisor mode ===\n");
+	start_transfer_privilege();
 
-	s_regfile.ra = (metal_xreg_t)&&go_umode;
-	/* Use API of freedom-metal to switch mode */
-	metal_privilege_drop_to_mode(METAL_PRIVILEGE_SUPERVISOR,
-				     s_regfile,
-				     supervisor_mode_entry_point);
-go_umode:
-	/* Transfer to user mode */
-	printf("=== Transfer privilege to user mode ===\n");
-
-	u_regfile.ra = (metal_xreg_t)&&go_exit;
-	/* Use our own function to switch mode */
-	switch_mode(METAL_PRIVILEGE_USER,
-		    u_regfile,
-		    user_mode_entry_point);
-
-go_exit:
 	return 0;
 }
